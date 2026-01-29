@@ -1,24 +1,32 @@
-import { NextRequest } from 'next/server'; // Use NextRequest for better type safety
+import { NextRequest } from 'next/server';
 import { redis, getCurrentTime } from '@/lib/redis';
 
-// Change: params is now a Promise
+// FIX: Params must be a Promise in the type definition
 export async function GET(
-  req: NextRequest, 
-  { params }: { params: Promise<{ id: string }> } 
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  // Change: You must await the params
+  // FIX: Await the params before using 'id'
   const { id } = await params;
-  
+
+  // Requirement: Fetch from the persistence layer
   const data: any = await redis.get(`paste:${id}`);
+  
+  // Requirement: Use the helper to handle the x-test-now-ms header
   const now = getCurrentTime(req.headers);
 
-  if (!data) return Response.json({ error: "Missing paste" }, { status: 404 });
+  // Requirement: If missing, return 404
+  if (!data) {
+    return Response.json({ error: "Missing paste" }, { status: 404 });
+  }
 
+  // Requirement: Check constraints (TTL and View Limits)
   if ((data.expires_at && now > data.expires_at) || 
       (data.max_views && data.view_count >= data.max_views)) {
     return Response.json({ error: "Unavailable" }, { status: 404 });
   }
 
+  // Requirement: Successful API fetch counts as a view
   data.view_count += 1;
   await redis.set(`paste:${id}`, data);
 
